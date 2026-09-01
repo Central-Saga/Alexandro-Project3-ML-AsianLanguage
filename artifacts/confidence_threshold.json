@@ -1,0 +1,5 @@
+{
+  "threshold": -0.018028416157938577,
+  "score_type": "LinearSVC decision_function margin",
+  "source": "validation percentile 1"
+}
