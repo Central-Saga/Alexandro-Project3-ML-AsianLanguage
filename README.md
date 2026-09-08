@@ -88,3 +88,36 @@ print(detailed)
 
 ## Rencana Implementasi Android
 Fase selanjutnya dari proyek ini adalah melakukan konversi model Scikit-Learn (*LinearSVC* dan *TF-IDF*) menjadi format **TensorFlow Lite (TFLite)** atau porting komputasi bobot matriks liniernya secara langsung ke dalam Kotlin/Java agar dapat berjalan *on-device* dengan latensi rendah tanpa memerlukan API server.
+
+## Fitur Active Learning (Pembelajaran Semi-Otomatis)
+Aplikasi Android sekarang mendukung fitur pengumpulan koreksi (feedback) dari pengguna ketika prediksi dirasa kurang akurat.
+
+### Alur Koreksi Pengguna
+1. Ketika pengguna mendeteksi bahasa, Android menampilkan tombol "Koreksi hasil".
+2. Pengguna dapat memilih bahasa yang benar dari dropdown (diperoleh otomatis dari backend `/languages`) atau mengetik nama bahasa baru.
+3. Feedback dikirimkan ke `/feedback` dan disimpan di database lokal SQLite (`data/feedback.db`) dengan status `PENDING`.
+4. *Penting: Teks yang dikoreksi disimpan secara persisten di server untuk keperluan evaluasi dan retraining. Data ini dapat bersifat privasi tergantung pada teks yang dimasukkan pengguna.*
+
+### Cara Menyetujui/Menolak Feedback
+Administrator atau kurator data dapat mengupdate status feedback pada database `feedback.db` secara langsung (mengubah `PENDING` menjadi `APPROVED` atau `REJECTED`).
+
+### Cara Menjalankan Retraining
+Model baru dapat dilatih ulang menggunakan gabungan dataset utama dan feedback berstatus `APPROVED` menggunakan perintah:
+```bash
+python -m src.retrain --base-data data/verified_dataset.csv --output-dir artifacts_candidate
+```
+*Catatan: Bahasa baru yang memiliki sampel kurang dari batas minimum (default 50) tidak akan diikutsertakan.*
+
+### Evaluasi dan Promosi Model Kandidat
+Skrip `src.retrain` secara otomatis melakukan perhitungan Macro F1 Score dan metrik evaluasi lainnya, kemudian menyimpannya ke `artifacts_candidate/config.json`.
+Untuk mempromosikan model kandidat menjadi model aktif, jalankan:
+```bash
+python -m src.model_manager
+```
+Skrip ini akan membandingkan F1 Score. Jika tidak ada penurunan performa yang signifikan, model akan disalin ke folder `artifacts/`, dan model lama di-backup ke `artifacts_backup/`.
+
+### Mekanisme Rollback
+Jika model yang baru dipromosikan mengalami kegagalan saat digunakan, jalankan perintah berikut untuk mengembalikannya ke versi backup:
+```bash
+python -m src.model_manager rollback
+```

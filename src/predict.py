@@ -95,3 +95,8 @@ def predict_with_details(input_df: pd.DataFrame) -> list:
         })
         
     return results
+
+def get_active_languages() -> list:
+    """Mengembalikan daftar label bahasa dari model yang dimuat."""
+    load_artifacts()
+    return _LABELS or []

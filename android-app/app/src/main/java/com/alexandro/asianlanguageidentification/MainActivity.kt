@@ -45,6 +45,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.alexandro.asianlanguageidentification.network.PredictionResponse
 import com.alexandro.asianlanguageidentification.ui.theme.AsianLanguageIdentificationTheme
 
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material3.Icon
+
+
 private val PrimaryBlue = Color(0xFF174EA6)
 private val DarkBlue = Color(0xFF092B63)
 private val LightBackground = Color(0xFFF4F7FC)
@@ -70,8 +77,14 @@ fun LanguageDetectionRoute(viewModel: LanguageDetectionViewModel) {
         isLoading = viewModel.isLoading,
         predictionResult = viewModel.predictionResult,
         errorMessage = viewModel.errorMessage,
+        activeLanguages = viewModel.activeLanguages,
+        isFeedbackSubmitting = viewModel.isFeedbackSubmitting,
+        feedbackMessage = viewModel.feedbackMessage,
         onDetectLanguage = { text -> viewModel.detectLanguage(text) },
-        onClearResult = { viewModel.clearResult() }
+        onClearResult = { viewModel.clearResult() },
+        onSubmitFeedback = { text, predicted, corrected, margin, isCorrect -> 
+            viewModel.submitFeedback(text, predicted, corrected, margin, isCorrect)
+        }
     )
 }
 
@@ -80,24 +93,36 @@ fun LanguageDetectionScreen(
     isLoading: Boolean,
     predictionResult: PredictionResponse?,
     errorMessage: String?,
+    activeLanguages: List<String>,
+    isFeedbackSubmitting: Boolean,
+    feedbackMessage: String?,
     onDetectLanguage: (String) -> Unit,
-    onClearResult: () -> Unit
+    onClearResult: () -> Unit,
+    onSubmitFeedback: (String, String, String, Float?, Boolean) -> Unit
 ) {
     var inputText by rememberSaveable { mutableStateOf("") }
+    var showCorrectionUI by rememberSaveable { mutableStateOf(false) }
+    var selectedCorrectionLanguage by rememberSaveable { mutableStateOf("") }
+    var otherLanguageInput by rememberSaveable { mutableStateOf("") }
+    var expandedDropdown by rememberSaveable { mutableStateOf(false) }
 
     val minimumCharacters = 20
     val textLength = inputText.trim().length
     val isInputValid = textLength >= minimumCharacters
 
-    val supportedLanguages = listOf(
-        "Indonesia",
-        "Melayu",
-        "Vietnam",
-        "Thai",
-        "Khmer",
-        "Lao",
-        "Filipino/Tagalog"
-    )
+    val supportedLanguages = if (activeLanguages.isNotEmpty()) {
+        activeLanguages
+    } else {
+        listOf(
+            "Indonesia",
+            "Melayu",
+            "Vietnam",
+            "Thai",
+            "Khmer",
+            "Lao",
+            "Filipino/Tagalog"
+        )
+    }
 
     Scaffold(
         containerColor = LightBackground
@@ -150,6 +175,7 @@ fun LanguageDetectionScreen(
                             value = inputText,
                             onValueChange = {
                                 inputText = it
+                                showCorrectionUI = false
                                 onClearResult()
                             },
                             modifier = Modifier.fillMaxWidth(),
@@ -202,6 +228,7 @@ fun LanguageDetectionScreen(
                             TextButton(
                                 onClick = {
                                     inputText = ""
+                                    showCorrectionUI = false
                                     onClearResult()
                                 },
                                 modifier = Modifier.align(Alignment.End)
@@ -291,6 +318,86 @@ fun LanguageDetectionScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Color(0xFF3D587A)
                             )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    if (feedbackMessage != null) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))
+                        ) {
+                            Text(
+                                text = feedbackMessage,
+                                modifier = Modifier.padding(16.dp),
+                                color = SuccessGreen
+                            )
+                        }
+                    } else if (isFeedbackSubmitting) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    } else if (!showCorrectionUI) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                            Button(onClick = { 
+                                onSubmitFeedback(inputText, predictionResult.language_code, predictionResult.language_code, predictionResult.margin_score, true) 
+                            }, colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen)) {
+                                Text("Hasil sudah benar")
+                            }
+                            Button(onClick = { showCorrectionUI = true }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))) {
+                                Text("Koreksi hasil")
+                            }
+                        }
+                    } else {
+                        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(2.dp)) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text("Pilih bahasa yang benar:", fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                
+                                Box(modifier = Modifier.fillMaxWidth()) {
+                                    Button(onClick = { expandedDropdown = true }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color.LightGray, contentColor = Color.Black)) {
+                                        Text(if (selectedCorrectionLanguage.isEmpty()) "Pilih Bahasa" else selectedCorrectionLanguage)
+                                        Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                                    }
+                                    DropdownMenu(expanded = expandedDropdown, onDismissRequest = { expandedDropdown = false }) {
+                                        supportedLanguages.forEach { lang ->
+                                            DropdownMenuItem(text = { Text(lang) }, onClick = { 
+                                                selectedCorrectionLanguage = lang
+                                                expandedDropdown = false 
+                                            })
+                                        }
+                                        DropdownMenuItem(text = { Text("Bahasa lain") }, onClick = { 
+                                            selectedCorrectionLanguage = "Bahasa lain"
+                                            expandedDropdown = false 
+                                        })
+                                    }
+                                }
+                                
+                                if (selectedCorrectionLanguage == "Bahasa lain") {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    OutlinedTextField(
+                                        value = otherLanguageInput,
+                                        onValueChange = { otherLanguageInput = it },
+                                        label = { Text("Ketik nama bahasa") },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                                
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                                    TextButton(onClick = { showCorrectionUI = false }) {
+                                        Text("Batal")
+                                    }
+                                    Button(onClick = {
+                                        val corrected = if (selectedCorrectionLanguage == "Bahasa lain") otherLanguageInput else selectedCorrectionLanguage
+                                        if (corrected.isNotBlank()) {
+                                            onSubmitFeedback(inputText, predictionResult.language_code, corrected, predictionResult.margin_score, false)
+                                            showCorrectionUI = false
+                                        }
+                                    }) {
+                                        Text("Kirim Koreksi")
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -480,8 +587,12 @@ private fun LanguageDetectionPreview() {
             isLoading = false,
             predictionResult = null,
             errorMessage = null,
+            activeLanguages = emptyList(),
+            isFeedbackSubmitting = false,
+            feedbackMessage = null,
             onDetectLanguage = {},
-            onClearResult = {}
+            onClearResult = {},
+            onSubmitFeedback = { _, _, _, _, _ -> }
         )
     }
 }

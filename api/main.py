@@ -4,9 +4,14 @@ import logging
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
+from fastapi import Header
+import re
 
-from src.predict import load_artifacts, predict_with_details
+from src.predict import load_artifacts, predict_with_details, get_active_languages
 from src.preprocessing import clean_text
+from src.script_detection import is_unknown_script
+from src.database import save_feedback, get_feedback_stats
 
 
 LOGGER = logging.getLogger(__name__)
@@ -44,6 +49,21 @@ class HealthResponse(BaseModel):
     status: str
     model_ready: bool
     supported_languages: list[str]
+
+class FeedbackRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=5000)
+    predicted_language: str = Field(...)
+    corrected_language: str = Field(...)
+    margin_score: Optional[float] = Field(None)
+    is_correct: bool = Field(...)
+    model_version: str = Field(...)
+
+class FeedbackResponse(BaseModel):
+    status: str
+    message: str
+
+class LanguageResponse(BaseModel):
+    languages: list[str]
 
 
 @asynccontextmanager
@@ -138,6 +158,15 @@ def predict_language(
             ),
         )
 
+    if is_unknown_script(cleaned_text):
+        return PredictionResponse(
+            status="unknown",
+            language_code="unknown",
+            language_name="Bahasa tidak dikenali",
+            margin_score=0.0,
+            text_length=len(cleaned_text),
+        )
+
     try:
         input_df = pd.DataFrame(
             {
@@ -148,17 +177,6 @@ def predict_language(
         result = predict_with_details(input_df)[0]
         margin_score = result["margin_score"]
         
-        # Threshold check
-        threshold = getattr(app.state, "threshold", -0.018028416157938577)
-        if margin_score < threshold:
-            return PredictionResponse(
-                status="unknown",
-                language_code="unknown",
-                language_name="Bahasa tidak dikenali",
-                margin_score=margin_score,
-                text_length=len(cleaned_text),
-            )
-            
         language_code = result["label"]
 
         return PredictionResponse(
@@ -180,3 +198,51 @@ def predict_language(
             status_code=500,
             detail="Terjadi kesalahan saat menjalankan prediksi.",
         ) from exc
+
+@app.get("/languages", response_model=LanguageResponse)
+def get_languages():
+    if not app.state.model_ready:
+        raise HTTPException(status_code=503, detail="Model belum siap.")
+    active_langs = get_active_languages()
+    return LanguageResponse(languages=active_langs)
+
+@app.post("/feedback", response_model=FeedbackResponse)
+def submit_feedback(payload: FeedbackRequest):
+    if not app.state.model_ready:
+        raise HTTPException(status_code=503, detail="Model belum siap.")
+        
+    cleaned_text = clean_text(payload.text)
+    if not cleaned_text or len(cleaned_text) < MINIMUM_CHARACTERS:
+        raise HTTPException(status_code=422, detail="Teks tidak valid atau terlalu pendek.")
+        
+    if not re.match(r'^[a-zA-Z0-9_ -]+$', payload.corrected_language):
+        raise HTTPException(status_code=422, detail="Format nama bahasa tidak valid.")
+        
+    corr_lang = payload.corrected_language.strip().lower()
+    
+    try:
+        res = save_feedback(
+            text=cleaned_text,
+            predicted_language=payload.predicted_language,
+            corrected_language=corr_lang,
+            margin_score=payload.margin_score,
+            is_correct=payload.is_correct,
+            model_version=payload.model_version
+        )
+        if res == -1:
+            return FeedbackResponse(status="ignored", message="Feedback duplikat.")
+        return FeedbackResponse(status="success", message="Feedback berhasil disimpan.")
+    except Exception as exc:
+        LOGGER.exception("Gagal menyimpan feedback.")
+        raise HTTPException(status_code=500, detail="Gagal menyimpan feedback.") from exc
+
+@app.get("/feedback/stats")
+def feedback_stats(authorization: Optional[str] = Header(None)):
+    if authorization != "Bearer ADMIN_SECRET":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        stats = get_feedback_stats()
+        return stats
+    except Exception as exc:
+        LOGGER.exception("Gagal mengambil statistik.")
+        raise HTTPException(status_code=500, detail="Gagal mengambil statistik.") from exc
