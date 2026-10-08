@@ -1,6 +1,5 @@
 import pytest
 import pandas as pd
-from pathlib import Path
 from src.database import save_feedback, update_feedback_status, _get_connection
 import subprocess
 
@@ -26,10 +25,11 @@ def test_retrain_script(tmp_path):
         update_feedback_status(fid, "APPROVED")
         
     # Jalankan script retrain
+    out_dir = tmp_path / "artifacts_candidate"
     result = subprocess.run([
         "python", "-m", "src.retrain",
         "--base-data", str(dummy_csv),
-        "--output-dir", "artifacts_test"
+        "--output-dir", str(out_dir)
     ], capture_output=True, text=True)
     
     print(result.stdout)
@@ -38,11 +38,13 @@ def test_retrain_script(tmp_path):
     assert "Retraining Selesai" in result.stdout
     
     # Cek apakah artifact candidate ada
-    out_dir = Path("artifacts_test")
     assert (out_dir / "model.pkl").exists()
     assert (out_dir / "preprocessor.pkl").exists()
     assert (out_dir / "config.json").exists()
-    
-    # Bersihkan file artifact_test
-    import shutil
-    shutil.rmtree("artifacts_test")
+    assert (out_dir / "confidence_threshold.json").exists()
+
+    import json
+    with (out_dir / "config.json").open(encoding="utf-8") as handle:
+        config = json.load(handle)
+    assert isinstance(config["baseline_macro_f1"], float)
+    assert config["baseline_classification_report"]

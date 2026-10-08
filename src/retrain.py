@@ -1,7 +1,6 @@
 import argparse
 import os
 import pandas as pd
-import numpy as np
 import joblib
 import json
 from pathlib import Path
@@ -18,9 +17,10 @@ sys.path.insert(0, str(BASE_DIR))
 
 from src.preprocessing import clean_text
 from src.database import get_feedbacks
+from src.model_metrics import calibrate_confidence_threshold
+from src.splitting import stratified_group_split
 
 RANDOM_SEED = 42
-np.random.seed(RANDOM_SEED)
 MIN_SAMPLES_PER_LANGUAGE = 50
 
 def main():
@@ -66,21 +66,21 @@ def main():
     df = df[df['language'].isin(valid_langs)]
     print(f"Distribusi bahasa (>= {MIN_SAMPLES_PER_LANGUAGE} sampel):\n{df['language'].value_counts()}")
     
-    # Splitting logic
-    unique_texts = df['text'].unique()
-    np.random.shuffle(unique_texts)
+    # Downsample to avoid OOM with 16 languages
+    df = df.groupby('language').sample(n=min(2500, len(df)), random_state=RANDOM_SEED, replace=True).reset_index(drop=True)
     
-    n_texts = len(unique_texts)
-    train_idx = int(n_texts * 0.7)
-    val_idx = int(n_texts * 0.85)
+    # Identical normalized texts stay together while every split remains
+    # balanced by language.
+    df['group_id'] = df['text']
+    train_texts, val_texts, test_texts = stratified_group_split(
+        df,
+        group_column='group_id',
+        random_state=RANDOM_SEED,
+    )
     
-    train_texts = set(unique_texts[:train_idx])
-    val_texts = set(unique_texts[train_idx:val_idx])
-    test_texts = set(unique_texts[val_idx:])
-    
-    df_train = df[df['text'].isin(train_texts)]
-    df_val = df[df['text'].isin(val_texts)]
-    df_test = df[df['text'].isin(test_texts)]
+    df_train = df[df['group_id'].isin(train_texts)]
+    df_val = df[df['group_id'].isin(val_texts)]
+    df_test = df[df['group_id'].isin(test_texts)]
     
     print(f"Train size: {len(df_train)}, Val size: {len(df_val)}, Test size: {len(df_test)}")
     
@@ -89,8 +89,9 @@ def main():
     X_test, y_test = df_test['text'], df_test['language']
     
     print("Training TF-IDF Vectorizer...")
-    vec = TfidfVectorizer(analyzer='char_wb', ngram_range=(2,5), max_features=100000)
+    vec = TfidfVectorizer(analyzer='char_wb', ngram_range=(1,3), min_df=5, max_features=40000)
     X_tr = vec.fit_transform(X_train)
+    X_v = vec.transform(X_val)
     X_t = vec.transform(X_test)
     
     print("Training LinearSVC...")
@@ -101,14 +102,26 @@ def main():
     y_pred = clf.predict(X_t)
     acc = accuracy_score(y_test, y_pred)
     f1 = f1_score(y_test, y_pred, average='macro')
+    threshold = calibrate_confidence_threshold(clf, X_v)
     
     labels_order = list(clf.classes_)
     print(f"Accuracy: {acc:.4f}")
     print(f"Macro F1: {f1:.4f}")
     
     print("\nClassification Report:")
-    report = classification_report(y_test, y_pred, labels=labels_order, output_dict=True)
-    print(classification_report(y_test, y_pred, labels=labels_order))
+    report = classification_report(
+        y_test,
+        y_pred,
+        labels=labels_order,
+        output_dict=True,
+        zero_division=0,
+    )
+    print(classification_report(
+        y_test,
+        y_pred,
+        labels=labels_order,
+        zero_division=0,
+    ))
     
     print("\nConfusion Matrix:")
     cm = confusion_matrix(y_test, y_pred, labels=labels_order)
@@ -120,6 +133,39 @@ def main():
     
     with open(output_dir / 'labels.json', 'w', encoding='utf-8') as f:
         json.dump(labels_order, f)
+
+    with open(output_dir / 'confidence_threshold.json', 'w', encoding='utf-8') as f:
+        json.dump({
+            'threshold': threshold,
+            'score_type': 'winning class decision score',
+            'source': 'validation in-distribution percentile 1',
+        }, f)
+
+    baseline_macro_f1 = None
+    baseline_report = None
+    active_dir = BASE_DIR / 'artifacts'
+    active_model_path = active_dir / 'model.pkl'
+    active_vectorizer_path = active_dir / 'preprocessor.pkl'
+    if active_model_path.exists() and active_vectorizer_path.exists():
+        print("Evaluating active model on the same candidate test set...")
+        active_model = joblib.load(active_model_path)
+        active_vectorizer = joblib.load(active_vectorizer_path)
+        active_predictions = active_model.predict(active_vectorizer.transform(X_test))
+        baseline_macro_f1 = f1_score(
+            y_test,
+            active_predictions,
+            labels=labels_order,
+            average='macro',
+            zero_division=0,
+        )
+        baseline_report = classification_report(
+            y_test,
+            active_predictions,
+            labels=labels_order,
+            output_dict=True,
+            zero_division=0,
+        )
+        print(f"Active model Macro F1 on candidate test set: {baseline_macro_f1:.4f}")
         
     config = {
         'model_type': 'LinearSVC',
@@ -131,7 +177,10 @@ def main():
         'training_date': pd.Timestamp.now().isoformat(),
         'n_samples_per_lang': df['language'].value_counts().to_dict(),
         'classification_report': report,
-        'confusion_matrix': cm.tolist()
+        'confusion_matrix': cm.tolist(),
+        'confidence_threshold': threshold,
+        'baseline_macro_f1': baseline_macro_f1,
+        'baseline_classification_report': baseline_report,
     }
     with open(output_dir / 'config.json', 'w', encoding='utf-8') as f:
         json.dump(config, f)

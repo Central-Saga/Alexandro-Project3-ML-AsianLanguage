@@ -27,6 +27,34 @@ def is_supported_letter(c: str) -> bool:
     if 0x1780 <= code <= 0x17FF or 0x19E0 <= code <= 0x19FF:
         return True
         
+    # Japanese (Hiragana, Katakana, Kanji)
+    if 0x3040 <= code <= 0x309F: # Hiragana
+        return True
+    if 0x30A0 <= code <= 0x30FF: # Katakana
+        return True
+    if 0x4E00 <= code <= 0x9FFF: # CJK Unified Ideographs (Kanji)
+        return True
+        
+    # Korean (Hangul)
+    if 0x1100 <= code <= 0x11FF: # Jamo
+        return True
+    if 0x3130 <= code <= 0x318F: # Compatibility Jamo
+        return True
+    if 0xAC00 <= code <= 0xD7AF: # Syllables
+        return True
+
+    # Hindi (Devanagari)
+    if 0x0900 <= code <= 0x097F:
+        return True
+
+    # Arabic, Persian, Urdu
+    if 0x0600 <= code <= 0x06FF or 0x0750 <= code <= 0x077F or 0x08A0 <= code <= 0x08FF:
+        return True
+
+    # Hebrew
+    if 0x0590 <= code <= 0x05FF:
+        return True
+        
     return False
 
 def is_unknown_script(text: str) -> bool:

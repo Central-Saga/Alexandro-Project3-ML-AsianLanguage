@@ -68,5 +68,36 @@ def test_feedback_stats_unauthorized():
         
 def test_feedback_stats_authorized():
     with TestClient(app) as client:
-        response = client.get("/feedback/stats", headers={"authorization": "Bearer ADMIN_SECRET"})
+        response = client.get(
+            "/feedback/stats",
+            headers={"authorization": "Bearer test-admin-token"},
+        )
         assert response.status_code == 200
+
+
+def test_feedback_display_name_is_canonicalized():
+    with TestClient(app) as client:
+        payload = {
+            "text": "Ini adalah kalimat yang cukup panjang untuk pengujian label.",
+            "predicted_language": "Indonesia",
+            "corrected_language": "Filipino/Tagalog",
+            "margin_score": 0.25,
+            "is_correct": False,
+            "model_version": "1.0.0",
+        }
+        response = client.post("/feedback", json=payload)
+        assert response.status_code == 200
+
+        feedbacks = get_feedbacks()
+        assert feedbacks[0]["predicted_language"] == "indonesian"
+        assert feedbacks[0]["corrected_language"] == "fil_tl"
+
+
+def test_feedback_stats_requires_server_configuration(monkeypatch):
+    monkeypatch.delenv("ADMIN_API_TOKEN")
+    with TestClient(app) as client:
+        response = client.get(
+            "/feedback/stats",
+            headers={"authorization": "Bearer test-admin-token"},
+        )
+        assert response.status_code == 503

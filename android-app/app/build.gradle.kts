@@ -3,6 +3,13 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val debugApiBaseUrl = providers.gradleProperty("DEBUG_API_BASE_URL")
+    .orElse("http://10.0.2.2:8000/")
+    .get()
+val releaseApiBaseUrl = providers.gradleProperty("RELEASE_API_BASE_URL")
+    .orElse("https://example.invalid/")
+    .get()
+
 android {
     namespace = "com.alexandro.asianlanguageidentification"
     compileSdk {
@@ -20,7 +27,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("String", "API_BASE_URL", "\"$debugApiBaseUrl\"")
+        }
         release {
+            buildConfigField("String", "API_BASE_URL", "\"$releaseApiBaseUrl\"")
             optimization {
                 enable = false
             }
@@ -32,6 +43,10 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+    lint {
+        disable.add("PropertyEscape")
     }
 }
 
@@ -40,8 +55,10 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:3.0.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
+    implementation("androidx.datastore:datastore-preferences:1.1.3")
 
     implementation(platform(libs.androidx.compose.bom))
+    implementation("androidx.compose.material:material-icons-extended")
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.ui)

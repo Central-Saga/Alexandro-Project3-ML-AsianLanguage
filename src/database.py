@@ -1,40 +1,57 @@
 import sqlite3
 import os
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "data" / "feedback.db"
 
+
+def get_db_path() -> Path:
+    """Return the configured database path.
+
+    Tests and deployments can point at an isolated database with
+    ``FEEDBACK_DB_PATH``. The environment is read for every connection so a
+    pytest fixture can safely switch databases after this module is imported.
+    """
+    configured_path = os.getenv("FEEDBACK_DB_PATH")
+    if configured_path:
+        return Path(configured_path).expanduser().resolve()
+    return DB_PATH
+
 def _get_connection():
     # Ensure data directory exists
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
+    db_path = get_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path), timeout=10)
     conn.row_factory = sqlite3.Row
+    _initialize_schema(conn)
     return conn
 
+
+def _initialize_schema(conn: sqlite3.Connection) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text TEXT NOT NULL,
+            predicted_language TEXT NOT NULL,
+            corrected_language TEXT NOT NULL,
+            margin_score REAL,
+            is_correct BOOLEAN NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('PENDING', 'APPROVED', 'REJECTED')),
+            timestamp TEXT NOT NULL,
+            model_version TEXT NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_status ON feedback(status)")
+    conn.commit()
+
+
 def init_db():
-    """Membangun tabel feedback jika belum ada."""
-    with _get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS feedback (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                text TEXT NOT NULL,
-                predicted_language TEXT NOT NULL,
-                corrected_language TEXT NOT NULL,
-                margin_score REAL,
-                is_correct BOOLEAN NOT NULL,
-                status TEXT NOT NULL CHECK(status IN ('PENDING', 'APPROVED', 'REJECTED')),
-                timestamp TEXT NOT NULL,
-                model_version TEXT NOT NULL
-            )
-        """)
-        # Index to speed up status-based queries
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_status ON feedback(status)")
-        # Index to prevent easy duplicates (optional, doing it in code is safer for now)
-        conn.commit()
+    """Build the feedback schema at the configured path if needed."""
+    with _get_connection():
+        pass
 
 def save_feedback(
     text: str,
@@ -45,7 +62,7 @@ def save_feedback(
     model_version: str
 ) -> int:
     """Menyimpan feedback baru dengan status PENDING."""
-    timestamp = datetime.utcnow().isoformat()
+    timestamp = datetime.now(timezone.utc).isoformat()
     with _get_connection() as conn:
         cursor = conn.cursor()
         

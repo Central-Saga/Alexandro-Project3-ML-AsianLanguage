@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 import joblib
 import json
 from pathlib import Path
@@ -13,6 +12,7 @@ ARTIFACTS_DIR = BASE_DIR / "artifacts"
 sys.path.insert(0, str(BASE_DIR))
 
 from src.preprocessing import clean_text
+from src.model_metrics import decision_confidence_scores
 
 # Lazy loading of artifacts
 _MODEL = None
@@ -74,18 +74,7 @@ def predict_with_details(input_df: pd.DataFrame) -> list:
     X_vec = _VECTORIZER.transform(texts)
     preds = _MODEL.predict(X_vec)
     
-    # LinearSVC tidak punya predict_proba, kita ambil decision_function max value
-    if hasattr(_MODEL, "decision_function"):
-        decision_scores = _MODEL.decision_function(X_vec)
-        if len(decision_scores.shape) == 1:
-            # Binary classification (seharusnya multi-class untuk proyek ini)
-            margin_score = np.abs(decision_scores)
-        else:
-            margin_score = np.max(decision_scores, axis=1)
-    else:
-        # Fallback jika model diganti ke yang punya proba
-        probs = _MODEL.predict_proba(X_vec)
-        margin_score = np.max(probs, axis=1)
+    margin_score = decision_confidence_scores(_MODEL, X_vec)
         
     results = []
     for pred, conf in zip(preds, margin_score):

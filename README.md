@@ -1,6 +1,6 @@
-# Deteksi Bahasa Asia Tenggara (Southeast Asian Language Detection)
+# Deteksi Bahasa Asia (Asian Language Detection)
 
-Proyek ini bertujuan untuk membangun model Machine Learning ringan (berbasis LinearSVC dengan *Character N-grams TF-IDF*) yang mampu mendeteksi bahasa-bahasa di wilayah Asia Tenggara dari masukan teks. Model ini dirancang agar efisien untuk di-*deploy* ke aplikasi *mobile* Android di masa depan.
+Proyek ini bertujuan untuk membangun model Machine Learning ringan (berbasis LinearSVC dengan *Character N-grams TF-IDF*) yang mampu mendeteksi bahasa-bahasa di wilayah Asia dari masukan teks. Model ini dirancang agar efisien untuk di-*deploy* ke aplikasi *mobile* Android di masa depan.
 
 ## Bahasa yang Didukung
 Model v2 saat ini mendukung 7 bahasa:
@@ -38,15 +38,34 @@ Berdasarkan evaluasi akhir pada *Test Set* yang sepenuhnya dipisahkan menggunaka
 
 ## Instalasi
 1. Clone repository ini.
-2. Buat environment baru (disarankan menggunakan Python 3.10+).
+2. Buat environment baru menggunakan Python 3.12+.
 3. Instal library yang dibutuhkan:
 ```bash
 pip install -r requirements.txt
 ```
 
+Untuk menjalankan test dan alat pengembangan:
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+## Menjalankan API
+Atur token admin melalui environment, lalu jalankan API dari root repository:
+```powershell
+$env:ADMIN_API_TOKEN = "ganti-dengan-token-acak-yang-panjang"
+uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+
+Endpoint prediksi tetap dapat digunakan tanpa token. Token hanya diperlukan
+untuk endpoint administratif `/feedback/stats`. Lokasi database dapat diubah
+dengan environment variable `FEEDBACK_DB_PATH`.
+
 ## Dataset
-Dataset gabungan (*Verified Dataset*) berisi 35.000 teks (masing-masing 5.000 kalimat per bahasa) dapat diunduh melalui link berikut:
-> **Download Dataset**: [URL_GOOGLE_DRIVE_DATASET_PLACEHOLDER]
+Dataset gabungan (*Verified Dataset*) berisi 35.000 teks (masing-masing 5.000 kalimat per bahasa), tetapi file lengkapnya tidak disertakan di repository:
+> Dataset terverifikasi belum dipublikasikan di repository ini. Atur sumber
+> dataset internal Anda sebagai `data/verified_dataset.csv` atau gunakan path
+> lain melalui argumen `--data-path`/`--base-data`.
 
 Setelah diunduh, simpan dataset tersebut di direktori lokal Anda (misalnya `data/verified_dataset.csv`). Sumber dataset mentah berasal dari publik domain dan kompilasi sumber *open-source* yang dikurasi.
 
@@ -86,8 +105,22 @@ print(detailed)
 - **Kata Serapan & Kalimat Sangat Pendek**: Akurasi dapat menurun drastis pada teks berukuran di bawah 50 karakter (khususnya antara *Indonesian* dan *Malay*) akibat kesamaan leksikal.
 - **Teks Out-of-Distribution**: Model belum dikonfigurasi sepenuhnya untuk memblokir karakter khusus secara eksplisit di level prapemrosesan (misal: *Korean Hangul*). Sangat direkomendasikan menambahkan blok deteksi Unicode sebelum melempar teks ke model TF-IDF ini.
 
-## Rencana Implementasi Android
-Fase selanjutnya dari proyek ini adalah melakukan konversi model Scikit-Learn (*LinearSVC* dan *TF-IDF*) menjadi format **TensorFlow Lite (TFLite)** atau porting komputasi bobot matriks liniernya secara langsung ke dalam Kotlin/Java agar dapat berjalan *on-device* dengan latensi rendah tanpa memerlukan API server.
+## Menjalankan Aplikasi Android
+Build debug memakai `http://127.0.0.1:8000/` melalui ADB reverse. Setelah
+emulator aktif, jalankan `adb reverse tcp:8000 tcp:8000`. Untuk perangkat
+fisik, atur alamat IP komputer pada Gradle properties lokal:
+```properties
+DEBUG_API_BASE_URL=http://192.168.1.10:8000/
+```
+
+Untuk build release, wajib siapkan URL HTTPS yang sebenarnya:
+```properties
+RELEASE_API_BASE_URL=https://api.example.com/
+```
+
+Riwayat deteksi disimpan lokal dan Android cloud backup dinonaktifkan untuk
+menghindari pencadangan teks pengguna. Implementasi on-device dengan TFLite
+masih dapat menjadi tahap lanjutan agar aplikasi tidak bergantung pada server.
 
 ## Fitur Active Learning (Pembelajaran Semi-Otomatis)
 Aplikasi Android sekarang mendukung fitur pengumpulan koreksi (feedback) dari pengguna ketika prediksi dirasa kurang akurat.
@@ -114,7 +147,11 @@ Untuk mempromosikan model kandidat menjadi model aktif, jalankan:
 ```bash
 python -m src.model_manager
 ```
-Skrip ini akan membandingkan F1 Score. Jika tidak ada penurunan performa yang signifikan, model akan disalin ke folder `artifacts/`, dan model lama di-backup ke `artifacts_backup/`.
+Skrip ini memvalidasi kelengkapan artifact, memastikan tidak ada label aktif
+yang hilang, dan membandingkan model lama serta kandidat pada test set yang
+sama. Promosi dilakukan dengan pergantian direktori atomik dan model lama
+disimpan di `artifacts_backup/`. Restart proses API setelah promosi agar artifact
+baru dimuat.
 
 ### Mekanisme Rollback
 Jika model yang baru dipromosikan mengalami kegagalan saat digunakan, jalankan perintah berikut untuk mengembalikannya ke versi backup:

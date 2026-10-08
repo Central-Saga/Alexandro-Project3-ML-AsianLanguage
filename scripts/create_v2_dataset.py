@@ -84,6 +84,7 @@ def process_v2_dataset():
     
     # Rule 7: Merge filipino and tagalog
     df_raw.loc[df_raw['language'].isin(['tagalog', 'filipino']), 'language'] = 'fil_tl'
+    df_raw.loc[df_raw['language'] == 'chinese (simplified)', 'language'] = 'chinese'
     
     # Drop empty again just in case
     df_raw = df_raw[df_raw['text'] != ""]

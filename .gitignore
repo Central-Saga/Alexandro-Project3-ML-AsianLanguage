@@ -3,11 +3,19 @@ processed/
 processed_v2/
 *.tsv
 __pycache__/
+.pytest_cache/
 .ipynb_checkpoints/
 .venv/
 env/
 .env
 clean_env/
+data/feedback.db
+data/feedback.db-shm
+data/feedback.db-wal
+artifacts_backup/
+artifacts_staging/
+artifacts_previous/
+artifacts_test/
 
 artifacts_final/
 artifacts_v2/

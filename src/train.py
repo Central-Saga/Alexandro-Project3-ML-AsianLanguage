@@ -1,13 +1,12 @@
 import argparse
 import os
 import pandas as pd
-import numpy as np
 import joblib
 import json
 from pathlib import Path
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.svm import LinearSVC
-from sklearn.metrics import accuracy_score, classification_report, f1_score
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
 import warnings
 import sys
 
@@ -17,9 +16,10 @@ warnings.filterwarnings('ignore')
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.preprocessing import clean_text
+from src.model_metrics import calibrate_confidence_threshold
+from src.splitting import stratified_group_split
 
 RANDOM_SEED = 42
-np.random.seed(RANDOM_SEED)
 
 def main():
     parser = argparse.ArgumentParser(description="Latih model deteksi bahasa.")
@@ -44,26 +44,13 @@ def main():
     # Filter valid
     df = df[df['text'] != ""]
     
-    # Splitting logic (Group by source_file + text hash to avoid leaking sentences from same article)
-    if 'document_id' in df.columns:
-        df['group_id'] = df['document_id']
-    else:
-        # Fallback to pseudo-group if source_file exists
-        if 'source_file' in df.columns:
-            df['group_id'] = df['source_file'] + "_" + df['text'].str[:30]
-        else:
-            df['group_id'] = df.index.astype(str)
-            
-    unique_groups = df['group_id'].unique()
-    np.random.shuffle(unique_groups)
-    
-    n_groups = len(unique_groups)
-    train_idx = int(n_groups * 0.7)
-    val_idx = int(n_groups * 0.85)
-    
-    train_groups = set(unique_groups[:train_idx])
-    val_groups = set(unique_groups[train_idx:val_idx])
-    test_groups = set(unique_groups[val_idx:])
+    df['group_id'] = df['text']
+
+    train_groups, val_groups, test_groups = stratified_group_split(
+        df,
+        group_column='group_id',
+        random_state=RANDOM_SEED,
+    )
     
     df_train = df[df['group_id'].isin(train_groups)]
     df_val = df[df['group_id'].isin(val_groups)]
@@ -79,6 +66,7 @@ def main():
     # Best config from v2: char_wb, ngram=(2,5)
     vec = TfidfVectorizer(analyzer='char_wb', ngram_range=(2,5), max_features=100000)
     X_tr = vec.fit_transform(X_train)
+    X_v = vec.transform(X_val)
     X_t = vec.transform(X_test)
     
     print("Training LinearSVC...")
@@ -89,12 +77,20 @@ def main():
     y_pred = clf.predict(X_t)
     acc = accuracy_score(y_test, y_pred)
     f1 = f1_score(y_test, y_pred, average='macro')
+    threshold = calibrate_confidence_threshold(clf, X_v)
     
     labels_order = list(clf.classes_)
     print(f"Accuracy: {acc:.4f}")
     print(f"Macro F1: {f1:.4f}")
     print("\nClassification Report:")
-    print(classification_report(y_test, y_pred, labels=labels_order))
+    report = classification_report(
+        y_test,
+        y_pred,
+        labels=labels_order,
+        output_dict=True,
+        zero_division=0,
+    )
+    print(classification_report(y_test, y_pred, labels=labels_order, zero_division=0))
     
     print(f"Saving artifacts to {output_dir}...")
     joblib.dump(clf, output_dir / 'model.pkl')
@@ -102,6 +98,13 @@ def main():
     
     with open(output_dir / 'labels.json', 'w', encoding='utf-8') as f:
         json.dump(labels_order, f)
+
+    with open(output_dir / 'confidence_threshold.json', 'w', encoding='utf-8') as f:
+        json.dump({
+            'threshold': threshold,
+            'score_type': 'winning class decision score',
+            'source': 'validation in-distribution percentile 1',
+        }, f)
         
     config = {
         'model_type': 'LinearSVC',
@@ -109,7 +112,14 @@ def main():
         'ngram_range': [2, 5],
         'C': 2.0,
         'accuracy': acc,
-        'macro_f1': f1
+        'macro_f1': f1,
+        'classification_report': report,
+        'confusion_matrix': confusion_matrix(
+            y_test,
+            y_pred,
+            labels=labels_order,
+        ).tolist(),
+        'confidence_threshold': threshold,
     }
     with open(output_dir / 'config.json', 'w', encoding='utf-8') as f:
         json.dump(config, f)

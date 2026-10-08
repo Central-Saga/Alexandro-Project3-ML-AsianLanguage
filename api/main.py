@@ -1,14 +1,21 @@
 from contextlib import asynccontextmanager
 import logging
+import os
+import secrets
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional
 from fastapi import Header
 import re
 
-from src.predict import load_artifacts, predict_with_details, get_active_languages
+from src.predict import (
+    ARTIFACTS_DIR,
+    get_active_languages,
+    load_artifacts,
+    predict_with_details,
+)
 from src.preprocessing import clean_text
 from src.script_detection import is_unknown_script
 from src.database import save_feedback, get_feedback_stats
@@ -25,7 +32,36 @@ DISPLAY_NAMES = {
     "malay": "Melayu",
     "thai": "Thai",
     "vietnamese": "Vietnam",
+    "japanese": "Jepang",
+    "korean": "Korea",
+    "chinese": "Mandarin",
+    "hindi": "Hindi",
 }
+
+LANGUAGE_ALIASES = {
+    "filipino": "fil_tl",
+    "filipino/tagalog": "fil_tl",
+    "indonesia": "indonesian",
+    "melayu": "malay",
+    "tagalog": "fil_tl",
+    "vietnam": "vietnamese",
+    "jepang": "japanese",
+    "korea": "korean",
+    "mandarin": "chinese",
+    "tiongkok": "chinese",
+}
+
+
+def canonicalize_language_label(value: str) -> str:
+    """Normalize display names and free-form labels into stable model codes."""
+    normalized = value.strip().lower()
+    if normalized in LANGUAGE_ALIASES:
+        return LANGUAGE_ALIASES[normalized]
+
+    normalized = re.sub(r"[ -]+", "_", normalized)
+    if not re.fullmatch(r"[a-z0-9_]+", normalized):
+        raise ValueError("Format nama bahasa tidak valid.")
+    return normalized
 
 
 class PredictionRequest(BaseModel):
@@ -52,11 +88,11 @@ class HealthResponse(BaseModel):
 
 class FeedbackRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=5000)
-    predicted_language: str = Field(...)
-    corrected_language: str = Field(...)
+    predicted_language: str = Field(..., min_length=1, max_length=64)
+    corrected_language: str = Field(..., min_length=1, max_length=64)
     margin_score: Optional[float] = Field(None)
     is_correct: bool = Field(...)
-    model_version: str = Field(...)
+    model_version: str = Field(..., min_length=1, max_length=64)
 
 class FeedbackResponse(BaseModel):
     status: str
@@ -79,8 +115,7 @@ async def lifespan(app: FastAPI):
     app.state.threshold = -0.018028416157938577
     try:
         import json
-        from pathlib import Path
-        threshold_path = Path("artifacts/confidence_threshold.json")
+        threshold_path = ARTIFACTS_DIR / "confidence_threshold.json"
         if threshold_path.exists():
             with open(threshold_path, "r", encoding="utf-8") as f:
                 threshold_config = json.load(f)
@@ -94,7 +129,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Asian Language Identification API",
     description=(
-        "API deteksi tujuh bahasa Asia Tenggara menggunakan "
+        "API deteksi bahasa Asia menggunakan "
         "Character TF-IDF dan LinearSVC."
     ),
     version="1.0.0",
@@ -176,7 +211,22 @@ def predict_language(
 
         result = predict_with_details(input_df)[0]
         margin_score = result["margin_score"]
-        
+
+        threshold = getattr(
+            app.state,
+            "threshold",
+            -0.018028416157938577,
+        )
+
+        if margin_score < threshold:
+            return PredictionResponse(
+                status="unknown",
+                language_code="unknown",
+                language_name="Bahasa tidak dikenali",
+                margin_score=margin_score,
+                text_length=len(cleaned_text),
+            )
+
         language_code = result["label"]
 
         return PredictionResponse(
@@ -210,21 +260,22 @@ def get_languages():
 def submit_feedback(payload: FeedbackRequest):
     if not app.state.model_ready:
         raise HTTPException(status_code=503, detail="Model belum siap.")
-        
+
     cleaned_text = clean_text(payload.text)
     if not cleaned_text or len(cleaned_text) < MINIMUM_CHARACTERS:
         raise HTTPException(status_code=422, detail="Teks tidak valid atau terlalu pendek.")
-        
-    if not re.match(r'^[a-zA-Z0-9_ -]+$', payload.corrected_language):
-        raise HTTPException(status_code=422, detail="Format nama bahasa tidak valid.")
-        
-    corr_lang = payload.corrected_language.strip().lower()
-    
+
+    try:
+        predicted_lang = canonicalize_language_label(payload.predicted_language)
+        corrected_lang = canonicalize_language_label(payload.corrected_language)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     try:
         res = save_feedback(
             text=cleaned_text,
-            predicted_language=payload.predicted_language,
-            corrected_language=corr_lang,
+            predicted_language=predicted_lang,
+            corrected_language=corrected_lang,
             margin_score=payload.margin_score,
             is_correct=payload.is_correct,
             model_version=payload.model_version
@@ -238,11 +289,22 @@ def submit_feedback(payload: FeedbackRequest):
 
 @app.get("/feedback/stats")
 def feedback_stats(authorization: Optional[str] = Header(None)):
-    if authorization != "Bearer ADMIN_SECRET":
+    admin_token = os.getenv("ADMIN_API_TOKEN")
+    if not admin_token:
+        raise HTTPException(
+            status_code=503,
+            detail="Admin API belum dikonfigurasi.",
+        )
+
+    expected_authorization = f"Bearer {admin_token}"
+    if not authorization or not secrets.compare_digest(
+        authorization,
+        expected_authorization,
+    ):
         raise HTTPException(status_code=401, detail="Unauthorized")
     try:
         stats = get_feedback_stats()
         return stats
     except Exception as exc:
         LOGGER.exception("Gagal mengambil statistik.")
-        raise HTTPException(status_code=500, detail="Gagal mengambil statistik.") from exc
+        raise HTTPException(status_code=500, detail="Gagal mengambil statistik.") from exc
