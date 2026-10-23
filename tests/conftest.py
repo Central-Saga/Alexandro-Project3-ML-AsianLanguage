@@ -9,6 +9,7 @@ import tempfile
 _TEST_STATE_DIR = Path(tempfile.mkdtemp(prefix="language-detector-tests-"))
 os.environ["FEEDBACK_DB_PATH"] = str(_TEST_STATE_DIR / "feedback.db")
 os.environ["ADMIN_API_TOKEN"] = "test-admin-token"
+os.environ["FEEDBACK_API_TOKEN"] = "test-feedback-token"
 
 
 def pytest_sessionfinish(session, exitstatus):

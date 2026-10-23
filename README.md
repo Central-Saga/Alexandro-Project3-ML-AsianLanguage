@@ -42,11 +42,12 @@ Perintah berikut menggunakan PowerShell di Windows. Jalankan dari folder utama r
    python -m pip install -r requirements.txt
    ```
 
-3. **Atur konfigurasi.** Salin `.env.example` menjadi `.env` sebagai referensi nilai konfigurasi. Aplikasi **tidak membaca `.env` secara otomatis**, jadi setel variabel lingkungan di terminal sebelum memulai API. `ADMIN_API_TOKEN` diperlukan hanya untuk `/feedback/stats`; `FEEDBACK_DB_PATH` opsional untuk mengganti lokasi SQLite.
+3. **Atur konfigurasi.** Salin `.env.example` menjadi `.env` sebagai referensi nilai konfigurasi. Aplikasi **tidak membaca `.env` secara otomatis**, jadi setel variabel lingkungan di terminal sebelum memulai API. `ADMIN_API_TOKEN` diperlukan hanya untuk `/feedback/stats`; `FEEDBACK_API_TOKEN` diperlukan untuk mengirim koreksi; `FEEDBACK_DB_PATH` opsional untuk mengganti lokasi SQLite.
 
    ```powershell
    Copy-Item .env.example .env
    $env:ADMIN_API_TOKEN = "ganti-dengan-token-acak-yang-panjang"
+   $env:FEEDBACK_API_TOKEN = "token-feedback-acak-yang-berbeda"
    # Opsional: $env:FEEDBACK_DB_PATH = "D:\path\ke\feedback.db"
    ```
 
@@ -58,13 +59,23 @@ Perintah berikut menggunakan PowerShell di Windows. Jalankan dari folder utama r
 
    Buka `http://127.0.0.1:8000/docs` untuk mencoba endpoint atau `http://127.0.0.1:8000/health` untuk memeriksa kesiapan model. Skema SQLite dibuat otomatis saat API memuat modul database; **tidak ada langkah migrate atau seed** untuk menjalankan aplikasi. Dataset pelatihan tidak perlu diimpor untuk inferensi karena artifact model sudah disertakan.
 
-5. **Jalankan aplikasi Android.** Buka folder `android-app/` di Android Studio, tunggu sinkronisasi Gradle, jalankan emulator Android API 24 atau lebih baru, lalu pilih **Run** untuk modul `app`. Build debug memakai `http://10.0.2.2:8000/` secara default agar emulator dapat mengakses API di komputer. Untuk perangkat fisik, atur `DEBUG_API_BASE_URL` ke alamat IP komputer yang dapat dijangkau perangkat, misalnya di `android-app/gradle.properties` lokal:
+5. **Jalankan aplikasi Android.** Buka folder `android-app/` di Android Studio, tunggu sinkronisasi Gradle, jalankan emulator Android API 24 atau lebih baru, lalu pilih **Run** untuk modul `app`. Build debug memakai `http://10.0.2.2:8000/` secara default agar emulator dapat mengakses API di komputer. Atur `FEEDBACK_API_TOKEN` dengan nilai yang sama di Gradle properties pengguna (`~/.gradle/gradle.properties`), agar fitur koreksi dapat dipakai. Jangan simpan token di file Gradle yang terlacak Git:
+
+   ```properties
+   FEEDBACK_API_TOKEN=token-feedback-acak-yang-berbeda
+   ```
+
+   Untuk perangkat fisik, atur `DEBUG_API_BASE_URL` ke alamat IP komputer yang dapat dijangkau perangkat, misalnya di `android-app/gradle.properties` lokal:
 
    ```properties
    DEBUG_API_BASE_URL=http://192.168.1.10:8000/
    ```
 
    Untuk build release, setel `RELEASE_API_BASE_URL` ke URL API HTTPS yang aktif. Alamat bawaan release adalah placeholder dan tidak dapat digunakan untuk prediksi.
+
+API membatasi feedback per sumber hingga 10 percobaan/jam dan 50/hari, serta membatasi antrean `PENDING` ke 1.000 baris dan total database ke 10.000 baris. Teks feedback yang sama tidak disimpan berulang. Token aplikasi adalah penghalang ringan dan dapat diekstrak dari APK; untuk distribusi publik, gunakan verifikasi aplikasi seperti Play Integrity atau gateway tepercaya selain batas server ini.
+
+Database `data/feedback.db` berisi teks kiriman pengguna dan tidak disertakan dalam repository. API membuat skemanya saat pertama kali dijalankan; simpan backup atau ekspor data operasional di luar repository.
 
 ## Foto dokumentasi
 

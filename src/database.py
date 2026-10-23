@@ -1,11 +1,24 @@
 import sqlite3
 import os
+import hashlib
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "data" / "feedback.db"
+FEEDBACK_HOURLY_LIMIT = 10
+FEEDBACK_DAILY_LIMIT = 50
+MAX_PENDING_FEEDBACK = 1000
+MAX_TOTAL_FEEDBACK = 10000
+
+
+class FeedbackRateLimitError(Exception):
+    pass
+
+
+class FeedbackCapacityError(Exception):
+    pass
 
 
 def get_db_path() -> Path:
@@ -26,6 +39,7 @@ def _get_connection():
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), timeout=10)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
     _initialize_schema(conn)
     return conn
 
@@ -45,6 +59,22 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_status ON feedback(status)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS feedback_sources (
+            feedback_id INTEGER PRIMARY KEY REFERENCES feedback(id) ON DELETE CASCADE,
+            source_hash TEXT NOT NULL,
+            text_hash TEXT NOT NULL UNIQUE
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS feedback_attempts (
+            source_hash TEXT NOT NULL,
+            period TEXT NOT NULL,
+            bucket INTEGER NOT NULL,
+            attempts INTEGER NOT NULL,
+            PRIMARY KEY (source_hash, period, bucket)
+        )
+    """)
     conn.commit()
 
 
@@ -59,12 +89,61 @@ def save_feedback(
     corrected_language: str,
     margin_score: Optional[float],
     is_correct: bool,
-    model_version: str
+    model_version: str,
+    source_hash: Optional[str] = None,
 ) -> int:
     """Menyimpan feedback baru dengan status PENDING."""
     timestamp = datetime.now(timezone.utc).isoformat()
     with _get_connection() as conn:
+        # Serialize quota checks and inserts across API workers.
+        conn.execute("BEGIN IMMEDIATE")
         cursor = conn.cursor()
+
+        if source_hash is not None:
+            now = datetime.now(timezone.utc)
+            hour_bucket = int(now.timestamp()) // 3600
+            day_bucket = int(now.timestamp()) // 86400
+            cursor.execute(
+                "DELETE FROM feedback_attempts WHERE "
+                "(period = 'hour' AND bucket < ?) OR "
+                "(period = 'day' AND bucket < ?)",
+                (hour_bucket - 24, day_bucket - 7),
+            )
+            for period, bucket, limit in (
+                ("hour", hour_bucket, FEEDBACK_HOURLY_LIMIT),
+                ("day", day_bucket, FEEDBACK_DAILY_LIMIT),
+            ):
+                row = cursor.execute(
+                    "SELECT attempts FROM feedback_attempts "
+                    "WHERE source_hash = ? AND period = ? AND bucket = ?",
+                    (source_hash, period, bucket),
+                ).fetchone()
+                if row and row["attempts"] >= limit:
+                    raise FeedbackRateLimitError("Batas pengiriman feedback tercapai.")
+                cursor.execute(
+                    "INSERT INTO feedback_attempts "
+                    "(source_hash, period, bucket, attempts) VALUES (?, ?, ?, 1) "
+                    "ON CONFLICT(source_hash, period, bucket) "
+                    "DO UPDATE SET attempts = attempts + 1",
+                    (source_hash, period, bucket),
+                )
+
+            text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            if cursor.execute(
+                "SELECT 1 FROM feedback_sources WHERE text_hash = ?",
+                (text_hash,),
+            ).fetchone():
+                return -1
+
+            counts = cursor.execute(
+                "SELECT COUNT(*) AS total, "
+                "SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) AS pending "
+                "FROM feedback"
+            ).fetchone()
+            if counts["total"] >= MAX_TOTAL_FEEDBACK or (
+                counts["pending"] or 0
+            ) >= MAX_PENDING_FEEDBACK:
+                raise FeedbackCapacityError("Kapasitas feedback penuh.")
         
         # Check for simple duplicate (same text and correction within a short time frame, or just same text in PENDING)
         cursor.execute(
@@ -78,8 +157,15 @@ def save_feedback(
             INSERT INTO feedback (text, predicted_language, corrected_language, margin_score, is_correct, status, timestamp, model_version)
             VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?)
         """, (text, predicted_language, corrected_language, margin_score, is_correct, timestamp, model_version))
+        feedback_id = cursor.lastrowid
+        if source_hash is not None:
+            cursor.execute(
+                "INSERT INTO feedback_sources (feedback_id, source_hash, text_hash) "
+                "VALUES (?, ?, ?)",
+                (feedback_id, source_hash, text_hash),
+            )
         conn.commit()
-        return cursor.lastrowid
+        return feedback_id
 
 def get_feedbacks(status: Optional[str] = None) -> List[Dict[str, Any]]:
     """Mengambil list feedback, bisa di-filter berdasarkan status."""

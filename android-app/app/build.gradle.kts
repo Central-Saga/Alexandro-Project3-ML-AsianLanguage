@@ -9,6 +9,9 @@ val debugApiBaseUrl = providers.gradleProperty("DEBUG_API_BASE_URL")
 val releaseApiBaseUrl = providers.gradleProperty("RELEASE_API_BASE_URL")
     .orElse("https://example.invalid/")
     .get()
+val feedbackApiToken = providers.gradleProperty("FEEDBACK_API_TOKEN")
+    .orElse("")
+    .get()
 
 android {
     namespace = "com.alexandro.asianlanguageidentification"
@@ -22,6 +25,7 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
+        buildConfigField("String", "FEEDBACK_API_TOKEN", "\"$feedbackApiToken\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

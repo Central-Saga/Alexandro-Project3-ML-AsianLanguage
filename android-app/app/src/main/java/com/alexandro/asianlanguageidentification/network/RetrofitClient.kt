@@ -44,6 +44,20 @@ class HostFallbackInterceptor : Interceptor {
 object RetrofitClient {
     private val okHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val request = chain.request()
+                val authenticatedRequest = if (
+                    request.url.encodedPath.endsWith("/feedback") &&
+                    BuildConfig.FEEDBACK_API_TOKEN.isNotEmpty()
+                ) {
+                    request.newBuilder()
+                        .header("X-Feedback-Token", BuildConfig.FEEDBACK_API_TOKEN)
+                        .build()
+                } else {
+                    request
+                }
+                chain.proceed(authenticatedRequest)
+            }
             .addInterceptor(HostFallbackInterceptor())
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)

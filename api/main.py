@@ -2,9 +2,11 @@ from contextlib import asynccontextmanager
 import logging
 import os
 import secrets
+import hashlib
+import hmac
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import Optional
 from fastapi import Header
@@ -18,7 +20,12 @@ from src.predict import (
 )
 from src.preprocessing import clean_text
 from src.script_detection import is_unknown_script
-from src.database import save_feedback, get_feedback_stats
+from src.database import (
+    FeedbackCapacityError,
+    FeedbackRateLimitError,
+    get_feedback_stats,
+    save_feedback,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -257,9 +264,23 @@ def get_languages():
     return LanguageResponse(languages=active_langs)
 
 @app.post("/feedback", response_model=FeedbackResponse)
-def submit_feedback(payload: FeedbackRequest):
+def submit_feedback(
+    payload: FeedbackRequest,
+    request: Request,
+    feedback_token: Optional[str] = Header(None, alias="X-Feedback-Token"),
+):
     if not app.state.model_ready:
         raise HTTPException(status_code=503, detail="Model belum siap.")
+
+    configured_token = os.getenv("FEEDBACK_API_TOKEN")
+    if not configured_token:
+        raise HTTPException(status_code=503, detail="Feedback belum dikonfigurasi.")
+    if configured_token == os.getenv("ADMIN_API_TOKEN"):
+        raise HTTPException(status_code=503, detail="Token feedback dan admin harus berbeda.")
+    if not feedback_token or not secrets.compare_digest(
+        feedback_token, configured_token
+    ):
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
     cleaned_text = clean_text(payload.text)
     if not cleaned_text or len(cleaned_text) < MINIMUM_CHARACTERS:
@@ -272,17 +293,26 @@ def submit_feedback(payload: FeedbackRequest):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     try:
+        client_host = request.client.host if request.client else "unknown"
+        source_hash = hmac.new(
+            configured_token.encode("utf-8"),
+            client_host.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
         res = save_feedback(
             text=cleaned_text,
             predicted_language=predicted_lang,
             corrected_language=corrected_lang,
             margin_score=payload.margin_score,
             is_correct=payload.is_correct,
-            model_version=payload.model_version
+            model_version=payload.model_version,
+            source_hash=source_hash,
         )
         if res == -1:
             return FeedbackResponse(status="ignored", message="Feedback duplikat.")
         return FeedbackResponse(status="success", message="Feedback berhasil disimpan.")
+    except (FeedbackRateLimitError, FeedbackCapacityError) as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     except Exception as exc:
         LOGGER.exception("Gagal menyimpan feedback.")
         raise HTTPException(status_code=500, detail="Gagal menyimpan feedback.") from exc
@@ -295,6 +325,8 @@ def feedback_stats(authorization: Optional[str] = Header(None)):
             status_code=503,
             detail="Admin API belum dikonfigurasi.",
         )
+    if admin_token == os.getenv("FEEDBACK_API_TOKEN"):
+        raise HTTPException(status_code=503, detail="Token feedback dan admin harus berbeda.")
 
     expected_authorization = f"Bearer {admin_token}"
     if not authorization or not secrets.compare_digest(
