@@ -170,7 +170,7 @@ def main():
     config = {
         'model_type': 'LinearSVC',
         'analyzer': 'char_wb',
-        'ngram_range': [2, 5],
+        'ngram_range': list(vec.ngram_range),
         'C': 2.0,
         'accuracy': acc,
         'macro_f1': f1,

@@ -25,22 +25,29 @@ Versi paket Python lengkap tercantum di `requirements.txt`. Artifact model (`mod
 
 Hanya model aktif di `artifacts/` yang disertakan dalam repository. Hasil retraining disimpan sementara di `artifacts_candidate/` (diabaikan Git); promosi hanya menerima kandidat dengan daftar bahasa yang sama dan metrik yang lolos pemeriksaan terhadap model aktif.
 
-Inferensi berjalan di backend: Android mengirim teks ke `/predict`, lalu menampilkan hasil model aktif. Tampilan aplikasi menandai model sebagai **AI MODEL V3**. `artifacts/model.pkl` berukuran 5.121.139 byte dan `preprocessor.pkl` 1.433.032 byte. `artifacts/config.json` mencatat pelatihan 8 Oktober 2026, akurasi **98,16%** dan macro F1 **0,9820** pada data uji; angka ini adalah catatan artefak, sedangkan reproduksi dataset dibahas di issue #12.
+Inferensi berjalan di backend: Android mengirim teks ke `/predict`, lalu menampilkan hasil model aktif. Tampilan aplikasi menandai model sebagai **AI MODEL V3**. `artifacts/config.json` mencatat akurasi **98,45%** dan macro F1 **0,9849** pada data uji dari dataset yang disertakan di bawah. File lain di `artifacts/` seperti `best_model.pkl` dan laporan eksperimen adalah arsip eksperimen lama; API memakai `model.pkl`, `preprocessor.pkl`, `labels.json`, dan `confidence_threshold.json`.
 
 ### Dataset dan reproduksi
 
-Konfigurasi artefak mencatat **2.500 sampel per bahasa** untuk 16 bahasa. Dataset olahan lokal `processed_v2/verified_dataset.csv` berisi 80.000 baris: 75.000 baris dari `old-newspaper.tsv` (15 bahasa) dan 5.000 baris Lao dari `aligned_data.csv`. Berkas korpus lokal `old-newspaper.tsv` cocok nama, ukuran, dan kolom dengan [Old Newspapers di Kaggle](https://www.kaggle.com/datasets/alvations/old-newspapers), yang halamannya berlabel **CC0**; checksum salinan sumber belum dibandingkan. Asal dan izin distribusi `aligned_data.csv` belum terverifikasi, sehingga dataset penuh belum diterbitkan. [Issue #12](https://github.com/Central-Saga/Alexandro-Project2-ML-AsianLanguage/issues/12) tetap mencatat kebutuhan tautan dataset publik.
+Dataset pelatihan lengkap tersedia di [data/verified_dataset.csv](data/verified_dataset.csv): **80.000 baris**, 5.000 per bahasa. Retraining memilih 2.500 baris per bahasa dengan seed 42. Sumber dan izin untuk semua 16 bahasa:
 
-`data/sample.csv` berisi **100 baris unik** dari korpus surat kabar untuk 6 bahasa, cukup untuk uji singkat skrip pelatihan. `data/verified_dataset.csv` berisi 840 baris untuk 7 bahasa; keduanya tidak mewakili dataset penuh model aktif. SHA-256 `data/sample.csv`: `f9897731081d89c66f5c75c92227cd7723e26ec6293ad3de9f46b6dc2dc04961`. SHA-256 dataset penuh lokal: `3b801d42c5766b0cd84b0f6d3038a532a79f8ddb685a15964fc16354e37b0cbf`.
+| Bahasa (label model) | Sumber | Lisensi |
+| --- | --- | --- |
+| `arabic`, `chinese`, `farsi`, `fil_tl`, `hebrew`, `hindi`, `indonesian`, `japanese`, `khmer`, `korean`, `malay`, `thai`, `turkish`, `urdu`, `vietnamese` | 75.000 baris dari [`old-newspaper.tsv`, Old Newspapers](https://www.kaggle.com/datasets/alvations/old-newspapers) oleh alvations; kredit korpus kepada Hans Christensen | [CC0 / Public Domain](https://www.kaggle.com/datasets/alvations/old-newspapers) menurut halaman dataset |
+| `lao` | 5.000 kalimat dari [ALT Parallel Corpus](https://www2.nict.go.jp/astrec-att/member/mutiyama/ALT/) milik NICT, melalui [split train `mutiyama/alt`](https://huggingface.co/datasets/mutiyama/alt/tree/main/alt-parallel) | [CC BY 4.0](https://www2.nict.go.jp/astrec-att/member/mutiyama/ALT/) — atribusi NICT dan Riza dkk., *Introduction of the Asian Language Treebank* (2016) |
 
-Untuk uji singkat dari clone bersih, jalankan `python src/train.py --data-path data/sample.csv --output-dir artifacts_test/sample`. Jika dataset penuh tersedia secara lokal dan checksum cocok, jalankan perintah berikut untuk mengulang metrik model tanpa feedback yang telah disetujui:
+Bagian Lao adalah adaptasi dari ALT: normalisasi Unicode NFKC, buang teks di bawah 20 karakter dan duplikat, ambil 5.000 baris unik dengan `random.Random(42).sample`, lalu urutkan menurut posisi asal. SHA-256 Parquet train ALT yang digunakan: `e2d95c41b90c0fe94226f9b424e63f476b6027015df4beba3e5d7e19092a3a44`. SHA-256 salinan lokal `old-newspaper.tsv`: `bcefcbb9328914812aa844803b3a164fdd2c3012ece889763b0b0127dac09df9`. Dataset lama lokal `processed_v2/verified_dataset.csv` memakai sumber Lao yang belum terverifikasi dan **bukan** dataset model aktif.
+
+SHA-256 `data/verified_dataset.csv`: `07dd47c4c377b40fa6037dfa33b684774dc386c7311cf43a37bada3841c5abf6`. `data/sample.csv` berisi **100 baris unik** dari korpus surat kabar untuk 6 bahasa, cukup untuk uji singkat skrip pelatihan; SHA-256: `f9897731081d89c66f5c75c92227cd7723e26ec6293ad3de9f46b6dc2dc04961`.
+
+Untuk uji singkat dari clone bersih, jalankan `python src/train.py --data-path data/sample.csv --output-dir artifacts_test/sample`. Untuk mengulang metrik model aktif tanpa memasukkan feedback yang disetujui, jalankan:
 
 ```powershell
 $env:FEEDBACK_DB_PATH = Join-Path $env:TEMP ("asianlanguage-empty-" + [guid]::NewGuid() + ".db")
-python src/retrain.py --base-data processed_v2/verified_dataset.csv --output-dir artifacts_candidate
+python src/retrain.py --base-data data/verified_dataset.csv --output-dir artifacts_candidate
 ```
 
-Pada lingkungan pengujian ini, perintah tersebut menghasilkan akurasi `0.9815621857190747`, macro F1 `0.9820077297545771`, dan confusion matrix yang sama dengan `artifacts/config.json`.
+Pada lingkungan pengujian ini, perintah tersebut menghasilkan akurasi `0.9845257903494177`, macro F1 `0.9848950427454879`, dan confusion matrix yang sama dengan `artifacts/config.json`.
 
 ## Cara menjalankan
 
