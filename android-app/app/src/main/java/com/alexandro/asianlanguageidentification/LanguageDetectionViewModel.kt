@@ -56,15 +56,22 @@ class LanguageDetectionViewModel(application: Application) : AndroidViewModel(ap
         const val FRIENDLY_NETWORK_ERROR =
             "Tidak dapat terhubung ke server. Pastikan backend aktif dan koneksi perangkat telah disiapkan."
         val FALLBACK_LANGUAGES = listOf(
+            "arabic",
+            "chinese",
+            "farsi",
             "fil_tl",
+            "hebrew",
+            "hindi",
             "indonesian",
+            "japanese",
             "khmer",
+            "korean",
             "lao",
             "malay",
             "thai",
-            "vietnamese",
-            "japanese",
-            "javanese"
+            "turkish",
+            "urdu",
+            "vietnamese"
         )
     }
 

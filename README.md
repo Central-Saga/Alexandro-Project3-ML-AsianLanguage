@@ -77,6 +77,8 @@ Perintah berikut menggunakan PowerShell di Windows. Jalankan dari folder utama r
 
    Untuk build release, setel `RELEASE_API_BASE_URL` ke URL API HTTPS yang aktif. Alamat bawaan release adalah placeholder dan tidak dapat digunakan untuk prediksi.
 
+Aplikasi hanya meminta izin `INTERNET`, yang diberikan Android saat instalasi tanpa dialog izin runtime. Saat API tidak tersedia, layar deteksi menampilkan pesan koneksi dan tombol **Coba lagi**; daftar bahasa memakai cadangan lokal 16 bahasa.
+
 API membatasi feedback per sumber hingga 10 percobaan/jam dan 50/hari, serta membatasi antrean `PENDING` ke 1.000 baris dan total database ke 10.000 baris. Teks feedback yang sama tidak disimpan berulang. Token aplikasi adalah penghalang ringan dan dapat diekstrak dari APK; untuk distribusi publik, gunakan verifikasi aplikasi seperti Play Integrity atau gateway tepercaya selain batas server ini.
 
 Database `data/feedback.db` berisi teks kiriman pengguna dan tidak disertakan dalam repository. API membuat skemanya saat pertama kali dijalankan; simpan backup atau ekspor data operasional di luar repository.
