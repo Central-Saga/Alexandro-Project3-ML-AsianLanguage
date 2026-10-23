@@ -1,160 +1,104 @@
-# Deteksi Bahasa Asia (Asian Language Detection)
+# Deteksi Bahasa Asia
 
-Proyek ini bertujuan untuk membangun model Machine Learning ringan (berbasis LinearSVC dengan *Character N-grams TF-IDF*) yang mampu mendeteksi bahasa-bahasa di wilayah Asia dari masukan teks. Model ini dirancang agar efisien untuk di-*deploy* ke aplikasi *mobile* Android di masa depan.
+Aplikasi Android untuk pengguna yang ingin mengenali bahasa dari teks beraksara Asia. Aplikasi mengirim teks ke API FastAPI; model *Character TF-IDF* dan *LinearSVC* mengembalikan prediksi bahasa serta **margin score**. Repository ini memuat aplikasi Android, API, model, dan kode pelatihan.
 
-## Bahasa yang Didukung
-Model v2 saat ini mendukung 7 bahasa:
-- Indonesian (`indonesian`)
-- Malay (`malay`)
-- Thai (`thai`)
-- Vietnamese (`vietnamese`)
-- Tagalog / Filipino (`fil_tl`)
-- Khmer (`khmer`)
-- Lao (`lao`)
+## Fitur
 
-> **Catatan**: Bahasa-bahasa lain seperti Burmese, Tetum, dan bahasa daerah Indonesia belum didukung pada versi ini karena belum masuk dalam tahap pelatihan (data tidak mencukupi untuk kriteria *sentence-level*).
+- Mendeteksi bahasa dari teks sepanjang **minimal 20 karakter** melalui `POST /predict`.
+- Mendukung **16 bahasa**: Arab, Mandarin, Farsi, Filipino/Tagalog, Ibrani, Hindi, Indonesia, Jepang, Khmer, Korea, Lao, Melayu, Thai, Turki, Urdu, dan Vietnam (sesuai `artifacts/labels.json`).
+- Menampilkan margin score sebagai ukuran relatif keyakinan model, **bukan probabilitas terkalibrasi**. Teks yang tidak dikenali dapat menghasilkan status `unknown`.
+- Menampilkan daftar bahasa dari `GET /languages`, riwayat deteksi lokal, serta panduan penggunaan di aplikasi Android.
+- Mengirim koreksi hasil ke `POST /feedback`; API menyimpannya di SQLite dengan status `PENDING`. Statistik feedback tersedia untuk admin melalui `GET /feedback/stats` dengan token.
+- Menyediakan dokumentasi API interaktif di `/docs` serta endpoint pemeriksaan layanan di `/health`.
 
-## Struktur Repository
-```
-├── artifacts/              # Berisi model.pkl, preprocessor.pkl, config.json, labels.json
-├── data/                   # Data sampel (contoh dataset)
-├── notebooks/              # Jupyter Notebook berisi proses eksperimen dan EDA
-├── src/                    # Source code utama (modul Python)
-│   ├── __init__.py
-│   ├── predict.py          # Script untuk memprediksi teks baru
-│   ├── preprocessing.py    # Modul pembersihan teks
-│   └── train.py            # Script pelatihan ulang model
-├── tests/                  # Unit test
-├── .gitignore
-├── requirements.txt
-└── README.md
-```
+## Spesifikasi dan kebutuhan minimum
 
-## Performa Model
-Berdasarkan evaluasi akhir pada *Test Set* yang sepenuhnya dipisahkan menggunakan *group-aware split* (70% Train, 15% Validation, 15% Test):
-- **Test Macro F1 Score**: 0.9830
-- **Test Accuracy**: 98.27%
-- **Inference Time**: ~0.40 ms / teks
+| Komponen | Teknologi / versi |
+| --- | --- |
+| Backend dan model | Python 3.12+, FastAPI 0.141.1, Uvicorn 0.52.4, scikit-learn 1.9.0, pandas 3.0.5, NumPy 2.5.2 |
+| Aplikasi | Kotlin 2.2.10, Jetpack Compose, Android Gradle Plugin 9.3.2, Gradle 9.5.0 |
+| Database | SQLite untuk feedback; default `data/feedback.db` |
+| Android | Minimum Android 7.0 / API 24; Android SDK dan Android Studio untuk build |
+| Lingkungan | Git, Python dan `pip`, serta koneksi dari emulator/perangkat ke API |
 
-## Instalasi
-1. Clone repository ini.
-2. Buat environment baru menggunakan Python 3.12+.
-3. Instal library yang dibutuhkan:
-```bash
-pip install -r requirements.txt
-```
+Versi paket Python lengkap tercantum di `requirements.txt`. Artifact model (`model.pkl`, `preprocessor.pkl`, dan `labels.json`) tersedia di `artifacts/`. Aplikasi Android memerlukan API aktif untuk melakukan prediksi dan mengirim koreksi.
 
-Untuk menjalankan test dan alat pengembangan:
-```bash
-pip install -r requirements-dev.txt
-pytest
-```
+## Cara menjalankan
 
-## Menjalankan API
-Atur token admin melalui environment, lalu jalankan API dari root repository:
-```powershell
-$env:ADMIN_API_TOKEN = "ganti-dengan-token-acak-yang-panjang"
-uvicorn api.main:app --host 0.0.0.0 --port 8000
-```
+Perintah berikut menggunakan PowerShell di Windows. Jalankan dari folder utama repository, kecuali jika disebut lain.
 
-Endpoint prediksi tetap dapat digunakan tanpa token. Token hanya diperlukan
-untuk endpoint administratif `/feedback/stats`. Lokasi database dapat diubah
-dengan environment variable `FEEDBACK_DB_PATH`.
+1. **Clone repository dan masuk ke folder project.**
 
-## Dataset
-Dataset gabungan (*Verified Dataset*) berisi 35.000 teks (masing-masing 5.000 kalimat per bahasa), tetapi file lengkapnya tidak disertakan di repository:
-> Dataset terverifikasi belum dipublikasikan di repository ini. Atur sumber
-> dataset internal Anda sebagai `data/verified_dataset.csv` atau gunakan path
-> lain melalui argumen `--data-path`/`--base-data`.
+   ```powershell
+   git clone https://github.com/Central-Saga/asian-language-identification.git
+   cd asian-language-identification
+   ```
 
-Setelah diunduh, simpan dataset tersebut di direktori lokal Anda (misalnya `data/verified_dataset.csv`). Sumber dataset mentah berasal dari publik domain dan kompilasi sumber *open-source* yang dikurasi.
+2. **Siapkan Python dan instal dependensi.**
 
-## Cara Pelatihan (Training)
-Untuk melatih ulang model dari awal, jalankan perintah berikut dari direktori root:
-```bash
-python src/train.py --data-path data/verified_dataset.csv --output-dir artifacts
-```
-Ini akan otomatis melatih *LinearSVC* dan menyimpan *TF-IDF Vectorizer* ke folder `artifacts/`.
+   ```powershell
+   py -3.12 -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   python -m pip install -r requirements.txt
+   ```
 
-## Cara Penggunaan (Inference)
-Gunakan modul `predict.py` untuk mendeteksi bahasa dari *DataFrame*:
-```python
-import pandas as pd
-from src.predict import predict, predict_with_details
+3. **Atur konfigurasi.** Salin `.env.example` menjadi `.env` sebagai referensi nilai konfigurasi. Aplikasi **tidak membaca `.env` secara otomatis**, jadi setel variabel lingkungan di terminal sebelum memulai API. `ADMIN_API_TOKEN` diperlukan hanya untuk `/feedback/stats`; `FEEDBACK_DB_PATH` opsional untuk mengganti lokasi SQLite.
 
-# Siapkan input DataFrame (harus memiliki kolom 'text')
-df = pd.DataFrame({
-    "text": [
-        "Cuaca hari ini sangat cerah.",
-        "Tôi đang học tiếng Việt."
-    ]
-})
+   ```powershell
+   Copy-Item .env.example .env
+   $env:ADMIN_API_TOKEN = "ganti-dengan-token-acak-yang-panjang"
+   # Opsional: $env:FEEDBACK_DB_PATH = "D:\path\ke\feedback.db"
+   ```
 
-# Prediksi label saja
-predictions = predict(df)
-print(predictions) 
-# Output: ['indonesian', 'vietnamese']
+4. **Jalankan API.**
 
-# Prediksi dengan detail (menampilkan margin_score dari LinearSVC)
-detailed = predict_with_details(df)
-print(detailed)
-# Output: [{'label': 'indonesian', 'margin_score': 1.8}, ...]
+   ```powershell
+   python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
+   ```
+
+   Buka `http://127.0.0.1:8000/docs` untuk mencoba endpoint atau `http://127.0.0.1:8000/health` untuk memeriksa kesiapan model. Skema SQLite dibuat otomatis saat API memuat modul database; **tidak ada langkah migrate atau seed** untuk menjalankan aplikasi. Dataset pelatihan tidak perlu diimpor untuk inferensi karena artifact model sudah disertakan.
+
+5. **Jalankan aplikasi Android.** Buka folder `android-app/` di Android Studio, tunggu sinkronisasi Gradle, jalankan emulator Android API 24 atau lebih baru, lalu pilih **Run** untuk modul `app`. Build debug memakai `http://10.0.2.2:8000/` secara default agar emulator dapat mengakses API di komputer. Untuk perangkat fisik, atur `DEBUG_API_BASE_URL` ke alamat IP komputer yang dapat dijangkau perangkat, misalnya di `android-app/gradle.properties` lokal:
+
+   ```properties
+   DEBUG_API_BASE_URL=http://192.168.1.10:8000/
+   ```
+
+   Untuk build release, setel `RELEASE_API_BASE_URL` ke URL API HTTPS yang aktif. Alamat bawaan release adalah placeholder dan tidak dapat digunakan untuk prediksi.
+
+## Foto dokumentasi
+
+Tiga screenshot aplikasi berikut disimpan di `screenshots/`.
+
+### Deteksi dan hasil prediksi
+
+<img src="screenshots/deteksi-bahasa.png" alt="Halaman deteksi dengan hasil prediksi bahasa Thai" width="320">
+
+### Daftar bahasa yang didukung
+
+<img src="screenshots/bahasa-didukung-2026-10-07.png" alt="Tampilan lama daftar bahasa yang didukung" width="320">
+
+Screenshot ini diambil pada **7 Oktober 2026** dan masih menampilkan 7 bahasa. Artifact model saat ini memuat **16 bahasa**, sehingga jumlah pada gambar berbeda dari versi sekarang.
+
+### Panduan penggunaan
+
+<img src="screenshots/cara-penggunaan.png" alt="Halaman panduan penggunaan aplikasi" width="320">
+
+## Struktur folder
+
+```text
+android-app/       Aplikasi Android (Kotlin dan Jetpack Compose)
+api/               Endpoint FastAPI
+artifacts/         Model, vectorizer, label, dan konfigurasi model
+data/              Data contoh dan database feedback SQLite
+notebooks/         Eksperimen dan analisis
+scripts/           Skrip pendukung
+screenshots/       Tiga tangkapan layar dokumentasi aplikasi
+src/               Prediksi, preprocessing, pelatihan, dan retraining
+tests/             Pengujian Python
+README.md          Dokumentasi project
 ```
 
-## Keterbatasan Model
-- **Kata Serapan & Kalimat Sangat Pendek**: Akurasi dapat menurun drastis pada teks berukuran di bawah 50 karakter (khususnya antara *Indonesian* dan *Malay*) akibat kesamaan leksikal.
-- **Teks Out-of-Distribution**: Model belum dikonfigurasi sepenuhnya untuk memblokir karakter khusus secara eksplisit di level prapemrosesan (misal: *Korean Hangul*). Sangat direkomendasikan menambahkan blok deteksi Unicode sebelum melempar teks ke model TF-IDF ini.
+## Kredit
 
-## Menjalankan Aplikasi Android
-Build debug memakai `http://127.0.0.1:8000/` melalui ADB reverse. Setelah
-emulator aktif, jalankan `adb reverse tcp:8000 tcp:8000`. Untuk perangkat
-fisik, atur alamat IP komputer pada Gradle properties lokal:
-```properties
-DEBUG_API_BASE_URL=http://192.168.1.10:8000/
-```
-
-Untuk build release, wajib siapkan URL HTTPS yang sebenarnya:
-```properties
-RELEASE_API_BASE_URL=https://api.example.com/
-```
-
-Riwayat deteksi disimpan lokal dan Android cloud backup dinonaktifkan untuk
-menghindari pencadangan teks pengguna. Implementasi on-device dengan TFLite
-masih dapat menjadi tahap lanjutan agar aplikasi tidak bergantung pada server.
-
-## Fitur Active Learning (Pembelajaran Semi-Otomatis)
-Aplikasi Android sekarang mendukung fitur pengumpulan koreksi (feedback) dari pengguna ketika prediksi dirasa kurang akurat.
-
-### Alur Koreksi Pengguna
-1. Ketika pengguna mendeteksi bahasa, Android menampilkan tombol "Koreksi hasil".
-2. Pengguna dapat memilih bahasa yang benar dari dropdown (diperoleh otomatis dari backend `/languages`) atau mengetik nama bahasa baru.
-3. Feedback dikirimkan ke `/feedback` dan disimpan di database lokal SQLite (`data/feedback.db`) dengan status `PENDING`.
-4. *Penting: Teks yang dikoreksi disimpan secara persisten di server untuk keperluan evaluasi dan retraining. Data ini dapat bersifat privasi tergantung pada teks yang dimasukkan pengguna.*
-
-### Cara Menyetujui/Menolak Feedback
-Administrator atau kurator data dapat mengupdate status feedback pada database `feedback.db` secara langsung (mengubah `PENDING` menjadi `APPROVED` atau `REJECTED`).
-
-### Cara Menjalankan Retraining
-Model baru dapat dilatih ulang menggunakan gabungan dataset utama dan feedback berstatus `APPROVED` menggunakan perintah:
-```bash
-python -m src.retrain --base-data data/verified_dataset.csv --output-dir artifacts_candidate
-```
-*Catatan: Bahasa baru yang memiliki sampel kurang dari batas minimum (default 50) tidak akan diikutsertakan.*
-
-### Evaluasi dan Promosi Model Kandidat
-Skrip `src.retrain` secara otomatis melakukan perhitungan Macro F1 Score dan metrik evaluasi lainnya, kemudian menyimpannya ke `artifacts_candidate/config.json`.
-Untuk mempromosikan model kandidat menjadi model aktif, jalankan:
-```bash
-python -m src.model_manager
-```
-Skrip ini memvalidasi kelengkapan artifact, memastikan tidak ada label aktif
-yang hilang, dan membandingkan model lama serta kandidat pada test set yang
-sama. Promosi dilakukan dengan pergantian direktori atomik dan model lama
-disimpan di `artifacts_backup/`. Restart proses API setelah promosi agar artifact
-baru dimuat.
-
-### Mekanisme Rollback
-Jika model yang baru dipromosikan mengalami kegagalan saat digunakan, jalankan perintah berikut untuk mengembalikannya ke versi backup:
-```bash
-python -m src.model_manager rollback
-```
+**Alexandro** — pengembangan project. Teknologi utama: scikit-learn, FastAPI, Kotlin, dan Jetpack Compose.
