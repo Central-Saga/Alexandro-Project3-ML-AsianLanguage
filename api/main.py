@@ -32,7 +32,10 @@ LOGGER = logging.getLogger(__name__)
 MINIMUM_CHARACTERS = 20
 
 DISPLAY_NAMES = {
+    "arabic": "Arab",
+    "farsi": "Farsi",
     "fil_tl": "Filipino/Tagalog",
+    "hebrew": "Ibrani",
     "indonesian": "Indonesia",
     "khmer": "Khmer",
     "lao": "Lao",
@@ -43,6 +46,8 @@ DISPLAY_NAMES = {
     "korean": "Korea",
     "chinese": "Mandarin",
     "hindi": "Hindi",
+    "turkish": "Turki",
+    "urdu": "Urdu",
 }
 
 LANGUAGE_ALIASES = {
@@ -166,7 +171,9 @@ def health():
     return HealthResponse(
         status="ok",
         model_ready=True,
-        supported_languages=list(DISPLAY_NAMES.values()),
+        supported_languages=[
+            DISPLAY_NAMES.get(label, label) for label in get_active_languages()
+        ],
     )
 
 

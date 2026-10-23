@@ -25,6 +25,8 @@ Versi paket Python lengkap tercantum di `requirements.txt`. Artifact model (`mod
 
 Hanya model aktif di `artifacts/` yang disertakan dalam repository. Hasil retraining disimpan sementara di `artifacts_candidate/` (diabaikan Git); promosi hanya menerima kandidat dengan daftar bahasa yang sama dan metrik yang lolos pemeriksaan terhadap model aktif.
 
+Inferensi berjalan di backend: Android mengirim teks ke `/predict`, lalu menampilkan hasil model aktif. Tampilan aplikasi menandai model sebagai **AI MODEL V3**. `artifacts/model.pkl` berukuran 5.121.139 byte dan `preprocessor.pkl` 1.433.032 byte. `artifacts/config.json` mencatat pelatihan 8 Oktober 2026, akurasi **98,16%** dan macro F1 **0,9820** pada data uji; angka ini adalah catatan artefak, sedangkan reproduksi dataset dibahas di issue #12.
+
 ## Cara menjalankan
 
 Perintah berikut menggunakan PowerShell di Windows. Jalankan dari folder utama repository, kecuali jika disebut lain.

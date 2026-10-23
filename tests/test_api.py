@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 from api.main import app
+from src.predict import get_active_languages
 
 @pytest.fixture(scope="module")
 def client():
@@ -15,6 +16,14 @@ def post_request(endpoint, payload, client=None):
     with TestClient(app) as c:
         response = c.post(endpoint, json=payload)
         return response.status_code, response.json()
+
+
+def test_health_lists_every_active_model_language(client):
+    response = client.get("/health")
+    assert response.status_code == 200
+    names = response.json()["supported_languages"]
+    assert len(names) == len(get_active_languages())
+    assert {"Arab", "Farsi", "Ibrani", "Turki", "Urdu"}.issubset(names)
 
 def test_predict_indonesian_success(client):
     payload = {
@@ -85,24 +94,16 @@ def test_predict_german_unknown_below_threshold(client):
         assert data["margin_score"] == threshold - 0.05
     print("test_predict_german_unknown_below_threshold: PASSED")
 
-def test_predict_korean_unknown_script(client):
-    """
-    Kalimat Korea harus tetap menghasilkan unknown melalui pemeriksaan Unicode script
-    tanpa memanggil predict_with_details().
-    """
+def test_predict_korean_uses_active_model(client):
     payload = {
         "text": "안녕하세요, 저는 오늘 한국어 문장을 테스트하고 있습니다."
     }
-    with patch("api.main.predict_with_details") as mock_predict:
-        status_code, data = post_request("/predict", payload, client)
-        assert status_code == 200, f"Expected 200, got {status_code}"
-        assert data["status"] == "unknown", f"Expected unknown, got {data['status']}"
-        assert data["language_code"] == "unknown", f"Expected unknown, got {data['language_code']}"
-        assert data["language_name"] == "Bahasa tidak dikenali", f"Expected Bahasa tidak dikenali, got {data['language_name']}"
-        assert data["margin_score"] == 0.0
-        assert data["text_length"] == len(payload["text"])
-        mock_predict.assert_not_called()
-    print("test_predict_korean_unknown_script: PASSED")
+    status_code, data = post_request("/predict", payload, client)
+    assert status_code == 200
+    assert data["status"] == "success"
+    assert data["language_code"] == "korean"
+    assert data["language_name"] == "Korea"
+    assert data["text_length"] == len(payload["text"])
 
 def test_predict_supported_languages_not_broken(client):
     """
