@@ -27,7 +27,20 @@ Hanya model aktif di `artifacts/` yang disertakan dalam repository. Hasil retrai
 
 Inferensi berjalan di backend: Android mengirim teks ke `/predict`, lalu menampilkan hasil model aktif. Tampilan aplikasi menandai model sebagai **AI MODEL V3**. `artifacts/model.pkl` berukuran 5.121.139 byte dan `preprocessor.pkl` 1.433.032 byte. `artifacts/config.json` mencatat pelatihan 8 Oktober 2026, akurasi **98,16%** dan macro F1 **0,9820** pada data uji; angka ini adalah catatan artefak, sedangkan reproduksi dataset dibahas di issue #12.
 
-Konfigurasi artefak mencatat **2.500 sampel per bahasa** untuk 16 bahasa. `data/sample.csv` berisi contoh kecil dan `data/verified_dataset.csv` berisi 840 baris untuk 7 bahasa; keduanya bukan dataset penuh model aktif. Dataset penuh, sumber, lisensi, dan checksum publik masih perlu dilengkapi pada [issue #12](https://github.com/Central-Saga/Alexandro-Project2-ML-AsianLanguage/issues/12).
+### Dataset dan reproduksi
+
+Konfigurasi artefak mencatat **2.500 sampel per bahasa** untuk 16 bahasa. Dataset olahan lokal `processed_v2/verified_dataset.csv` berisi 80.000 baris: 75.000 baris dari `old-newspaper.tsv` (15 bahasa) dan 5.000 baris Lao dari `aligned_data.csv`. Berkas korpus lokal `old-newspaper.tsv` cocok nama, ukuran, dan kolom dengan [Old Newspapers di Kaggle](https://www.kaggle.com/datasets/alvations/old-newspapers), yang halamannya berlabel **CC0**; checksum salinan sumber belum dibandingkan. Asal dan izin distribusi `aligned_data.csv` belum terverifikasi, sehingga dataset penuh belum diterbitkan. [Issue #12](https://github.com/Central-Saga/Alexandro-Project2-ML-AsianLanguage/issues/12) tetap mencatat kebutuhan tautan dataset publik.
+
+`data/sample.csv` berisi **100 baris unik** dari korpus surat kabar untuk 6 bahasa, cukup untuk uji singkat skrip pelatihan. `data/verified_dataset.csv` berisi 840 baris untuk 7 bahasa; keduanya tidak mewakili dataset penuh model aktif. SHA-256 `data/sample.csv`: `f9897731081d89c66f5c75c92227cd7723e26ec6293ad3de9f46b6dc2dc04961`. SHA-256 dataset penuh lokal: `3b801d42c5766b0cd84b0f6d3038a532a79f8ddb685a15964fc16354e37b0cbf`.
+
+Untuk uji singkat dari clone bersih, jalankan `python src/train.py --data-path data/sample.csv --output-dir artifacts_test/sample`. Jika dataset penuh tersedia secara lokal dan checksum cocok, jalankan perintah berikut untuk mengulang metrik model tanpa feedback yang telah disetujui:
+
+```powershell
+$env:FEEDBACK_DB_PATH = Join-Path $env:TEMP ("asianlanguage-empty-" + [guid]::NewGuid() + ".db")
+python src/retrain.py --base-data processed_v2/verified_dataset.csv --output-dir artifacts_candidate
+```
+
+Pada lingkungan pengujian ini, perintah tersebut menghasilkan akurasi `0.9815621857190747`, macro F1 `0.9820077297545771`, dan confusion matrix yang sama dengan `artifacts/config.json`.
 
 ## Cara menjalankan
 
