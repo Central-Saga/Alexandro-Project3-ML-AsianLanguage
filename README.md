@@ -30,8 +30,8 @@ Perintah berikut menggunakan PowerShell di Windows. Jalankan dari folder utama r
 1. **Clone repository dan masuk ke folder project.**
 
    ```powershell
-   git clone https://github.com/Central-Saga/asian-language-identification.git
-   cd asian-language-identification
+   git clone https://github.com/Central-Saga/Alexandro-Project2-ML-AsianLanguage.git
+   cd Alexandro-Project2-ML-AsianLanguage
    ```
 
 2. **Siapkan Python dan instal dependensi.**
