@@ -27,6 +27,8 @@ Hanya model aktif di `artifacts/` yang disertakan dalam repository. Hasil retrai
 
 Inferensi berjalan di backend: Android mengirim teks ke `/predict`, lalu menampilkan hasil model aktif. Tampilan aplikasi menandai model sebagai **AI MODEL V3**. `artifacts/model.pkl` berukuran 5.121.139 byte dan `preprocessor.pkl` 1.433.032 byte. `artifacts/config.json` mencatat pelatihan 8 Oktober 2026, akurasi **98,16%** dan macro F1 **0,9820** pada data uji; angka ini adalah catatan artefak, sedangkan reproduksi dataset dibahas di issue #12.
 
+Konfigurasi artefak mencatat **2.500 sampel per bahasa** untuk 16 bahasa. `data/sample.csv` berisi contoh kecil dan `data/verified_dataset.csv` berisi 840 baris untuk 7 bahasa; keduanya bukan dataset penuh model aktif. Dataset penuh, sumber, lisensi, dan checksum publik masih perlu dilengkapi pada [issue #12](https://github.com/Central-Saga/Alexandro-Project2-ML-AsianLanguage/issues/12).
+
 ## Cara menjalankan
 
 Perintah berikut menggunakan PowerShell di Windows. Jalankan dari folder utama repository, kecuali jika disebut lain.
@@ -100,6 +102,13 @@ Screenshot ini diambil pada **7 Oktober 2026** dan masih menampilkan 7 bahasa. A
 ### Panduan penggunaan
 
 <img src="screenshots/cara-penggunaan.png" alt="Halaman panduan penggunaan aplikasi" width="320">
+
+## Skenario demo
+
+1. Jalankan API sesuai langkah di atas dan buka `/health`; pastikan `model_ready` bernilai `true` dan daftar memuat 16 bahasa.
+2. Jalankan aplikasi di emulator. Pilih contoh kalimat **Indonesia**, lalu ketuk **Deteksi Bahasa**. Tunjukkan hasil prediksi dan margin score.
+3. Buka tab **Riwayat** untuk menunjukkan teks dan hasil yang tersimpan secara lokal. Buka tab **Bahasa** dan **Panduan** untuk menunjukkan daftar bahasa aktif serta cara penggunaan.
+4. Untuk menunjukkan penanganan gangguan, hentikan API sementara dan ulangi deteksi. Aplikasi menampilkan pesan koneksi serta tombol **Coba lagi**; jalankan kembali API sebelum melanjutkan demo.
 
 ## Struktur folder
 
