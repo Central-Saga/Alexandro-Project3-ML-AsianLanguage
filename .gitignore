@@ -13,6 +13,7 @@ data/feedback.db
 data/feedback.db-shm
 data/feedback.db-wal
 artifacts_backup/
+artifacts_candidate/
 artifacts_staging/
 artifacts_previous/
 artifacts_test/

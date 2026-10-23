@@ -33,6 +33,21 @@ def test_quality_gate_requires_same_holdout_baseline():
     )
 
 
+def test_quality_gate_rejects_extra_label():
+    assert not _candidate_passes_quality_gate(
+        {
+            "macro_f1": 0.92,
+            "baseline_macro_f1": 0.91,
+            "classification_report": _report(score=0.92),
+            "baseline_classification_report": _report(score=0.91),
+        },
+        candidate_labels=["indonesian", "malay", "javanese"],
+        active_labels=["indonesian", "malay"],
+        f1_tolerance=0.02,
+        max_class_drop=0.10,
+    )
+
+
 def test_quality_gate_accepts_non_regressing_candidate():
     assert _candidate_passes_quality_gate(
         {
@@ -41,7 +56,7 @@ def test_quality_gate_accepts_non_regressing_candidate():
             "classification_report": _report(score=0.92),
             "baseline_classification_report": _report(score=0.91),
         },
-        candidate_labels=["indonesian", "malay", "javanese"],
+        candidate_labels=["indonesian", "malay"],
         active_labels=["indonesian", "malay"],
         f1_tolerance=0.02,
         max_class_drop=0.10,

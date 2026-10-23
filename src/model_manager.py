@@ -57,12 +57,8 @@ def _candidate_passes_quality_gate(
     f1_tolerance: float,
     max_class_drop: float,
 ) -> bool:
-    missing_active_labels = sorted(set(active_labels) - set(candidate_labels))
-    if missing_active_labels:
-        print(
-            "TOLAK: Kandidat menghilangkan label aktif: "
-            + ", ".join(missing_active_labels)
-        )
+    if set(candidate_labels) != set(active_labels):
+        print("TOLAK: Daftar label kandidat harus sama dengan model aktif.")
         return False
 
     candidate_f1 = candidate_config.get("macro_f1")

@@ -23,6 +23,8 @@ Aplikasi Android untuk pengguna yang ingin mengenali bahasa dari teks beraksara 
 
 Versi paket Python lengkap tercantum di `requirements.txt`. Artifact model (`model.pkl`, `preprocessor.pkl`, dan `labels.json`) tersedia di `artifacts/`. Aplikasi Android memerlukan API aktif untuk melakukan prediksi dan mengirim koreksi.
 
+Hanya model aktif di `artifacts/` yang disertakan dalam repository. Hasil retraining disimpan sementara di `artifacts_candidate/` (diabaikan Git); promosi hanya menerima kandidat dengan daftar bahasa yang sama dan metrik yang lolos pemeriksaan terhadap model aktif.
+
 ## Cara menjalankan
 
 Perintah berikut menggunakan PowerShell di Windows. Jalankan dari folder utama repository, kecuali jika disebut lain.
